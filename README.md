@@ -1,3 +1,13 @@
+<!--
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<!--
+    Copyright (c) 2014, Joyent, Inc.
+-->
+
 # node-statblast: send statsd-like metric data
 
 This README is aspirational!  None of this exists yet.
@@ -48,7 +58,7 @@ blaster.counter('myapp.requests', {
 }, 1);
 
 /*
- * Ditto, but with a gauges.
+ * Ditto, but with a gauge.
  */
 blaster.gauge('myapp.concurrent_requests', {
     'host': require('os').hostname()
