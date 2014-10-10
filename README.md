@@ -30,6 +30,7 @@ var blaster = mod_statblast.createBlaster({
      * smaller) before dropping if needed.
      */
     'statsd_queue_npoints': 1000,
+    'statsd_queue_nmsecs': 2000,
 
     /*
      * With this configuration, statblast creates two families of stats.

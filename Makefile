@@ -25,4 +25,8 @@ JSL_CONF_NODE	 = jsl.node.conf
 all:
 	npm install
 
+test:
+	node tests/tst.schema.js 2>/dev/null
+	@echo tests okay
+
 include ./Makefile.targ
