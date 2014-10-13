@@ -22,7 +22,7 @@ var blaster = mod_statblast.createBlaster({
     /* all arguments optional, but you almost certainly want statsd_stats */
     'backend': 'statsd',
 
-    'statsd_mode': 'tcp',
+    'statsd_mode': 'udp',
     'statsd_host': process.env['STATBLAST_HOST'] || '127.0.0.1',
     'statsd_port': 8125,
 

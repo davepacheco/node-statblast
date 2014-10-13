@@ -25,7 +25,7 @@ var blaster = mod_statblast.createBlaster({
     /* all arguments optional, but you almost certainly want statsd_stats */
     'backend': 'statsd',
 
-    'statsd_mode': 'tcp',
+    'statsd_mode': 'udp',
     'statsd_host': '127.0.0.1',
     'statsd_port': 8125,
 
@@ -80,6 +80,38 @@ setInterval(function () {
 	}, 1);
 }, 1000);
 ```
+
+## Quick start using Docker
+
+1. Set up the [kamon-io Statsd + Graphite +
+   Grafana](https://github.com/kamon-io/docker-grafana-graphite) Docker image.
+   This should be just a "docker pull" plus a "docker run" that exposes at least
+   the statsd UDP port and Grafana HTTP port.
+
+1. Clone this repo:
+
+        $ git clone https://github.com/davepacheco/node-statblaster
+        $ cd node-statblaster
+
+1. Set the STATBLAST\_HOST environment variable to the IP of your Docker host.
+   If you're using boot2docker to run Docker, you can get this IP with
+   `boot2docker ip`.
+
+        $ export STATBLAST_HOST=192.168.59.103
+
+1. Start the demo statblast emitter:
+
+        $ node examples/synth.js
+
+   The demo won't emit anything as long it's emitting data normally.
+
+1. Open up Grafana.  You would normally access this by pointing your browser at
+   the same IP you set STATBLAST\_HOST to.
+
+1. Using the Grafana UI, add a new query for the Graphite expression:
+
+        sumSeries(stats.counters.myapp.requests.byhost.*.count)
+
 
 ## Background
 
@@ -142,8 +174,7 @@ does today is provide an interface for recording stat data that *could* support
 a richer backend in the future.
 
 You use statblast by creating a Blaster, configured as shown in the synopsis
-above.  Currently, only the TCP-based statsd backend is supported.  The basic
-method used on the blaster is:
+above.  The basic method used on the blaster is:
 
 ```javascript
 blaster.blast(type, basename, metadata, value);
@@ -212,10 +243,10 @@ That said, it's useful to be able to tell the status of statblast's downstream
 connection.  There are a few status methods on the blaster:
 
 * `nominal()`: returns a boolean indicating whether all downstream backends are
-  operating normally.  Normally this means that there's an open TCP connection
-  to the downstream statsd server and data is flowing.  However, if there are no
-  stats configured, then nominal() will return true even if the TCP connection
-  doesn't exist.
+  operating normally.  In TCP mode, this means that there's an open TCP
+  connection to the downstream statsd server and data is flowing.  However, if
+  there are no stats configured, then nominal() will return true even if the TCP
+  connection doesn't exist.
 * `nconnects()`: returns the number of successful TCP connections (indicates
   roughly how many times connectivity to the server has been lost)
 * `nattempts()`: returns the number of TCP connect attempts (both successful and

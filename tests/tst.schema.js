@@ -36,7 +36,7 @@ var bad = [
     [ { 'backend': true }, /property "backend":/ ],
     [ { 'backend': {} }, /property "backend":/ ],
     [ { 'backend': [] }, /property "backend":/ ],
-    [ { 'statsd_mode': 'udp' }, /property "statsd_mode":/ ],
+    [ { 'statsd_mode': 'junk' }, /property "statsd_mode":/ ],
     [ { 'statsd_mode': 5 }, /property "statsd_mode":/ ],
     [ { 'statsd_mode': true }, /property "statsd_mode":/ ],
     [ { 'statsd_mode': {} }, /property "statsd_mode":/ ],
