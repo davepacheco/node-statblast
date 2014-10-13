@@ -325,3 +325,22 @@ To make this concrete:
   returns true, `lastError()` returns null, and queued data points are
   transmitted downstream.  `nqueued()` should decrease to 0, and
   `lastWriteTime()` will increase to slowly reach the current time.
+
+
+## Inspecting statblast with DTrace
+
+On systems with DTrace support, statblast provides DTrace probes that fire
+whenever any counter or gauge is updated.  The included statblast.d script
+prints out all counters and gauges being updated on the system.  As an example,
+run the demo above, and then in a separate terminal, run:
+
+    $ sudo ./bin/statblast.d 
+    PID    TYPE    VALUE BASENAME/METADATA
+     70542 counter     1 myapp.requests {"host":"sharptooth","method":"GET"}
+     70542 counter     1 myapp.requests {"host":"sharptooth","method":"GET"}
+     70542 counter     1 myapp.requests {"host":"sharptooth","method":"GET"}
+     70542 counter     1 myapp.requests {"host":"sharptooth","method":"GET"}
+
+The script runs until you kill it.  Each time a counter or gauge is updated, it
+prints the pid that updated it, the type of stat (counter or gauge), the value,
+and the basename and metadata (see above).

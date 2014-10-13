@@ -12,6 +12,7 @@
 	"license": "MPL-2.0",
 	"dependencies": {
 		"assert-plus": "0.1.5",
+		"dtrace-provider": "0.2.8",
 		"extsprintf": "1.2.0",
 		"jsprim": "0.6.1",
 		"verror": "1.4.0"
