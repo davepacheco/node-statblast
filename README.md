@@ -16,7 +16,11 @@ This README is aspirational!  None of this exists yet.
 ## Synopsis
 
 ```javascript
+var mod_assert = require('assert');
+var mod_os = require('os');
 var mod_statblast = require('statblast');
+
+var hostname = mod_os.hostname().replaceAll(/\.*/g);
 var blaster = mod_statblast.createBlaster({
     /* all arguments optional, but you almost certainly want statsd_stats */
     'backend': 'statsd',
@@ -39,31 +43,42 @@ var blaster = mod_statblast.createBlaster({
      */
     'statsd_stats': {
         'myapp.requests': [
-	    '%_name.%host',
-	    '%_name.%method'
+	    '%_name.byhost.%host',
+	    '%_name.bymethod.%method'
 	]
     }
 });
 
 /*
- * This sends two values to statsd:
- *
- *    myapp.requests.host001    5
- *    myapp.requests.GET        5
- *
- * These are driven by the configuration above.
+ * createBlaster will return an Error in the event of invalid configuration.
  */
-blaster.counter('myapp.requests', {
-    'host': require('os').hostname(),
-    'method': 'GET'
-}, 1);
+mod_assert.ok(!(blaster instanceof Error));
 
-/*
- * Ditto, but with a gauge.
- */
-blaster.gauge('myapp.concurrent_requests', {
-    'host': require('os').hostname()
-}, 1);
+blaster.on('warn', function (err) {
+	console.error('statblaster: %s', err.message);
+});
+
+setInterval(function () {
+	/*
+	 * This sends two values to statsd:
+	 *
+	 *    myapp.requests.host001    5
+	 *    myapp.requests.GET        5
+	 *
+	 * These are driven by the configuration above.
+	 */
+	blaster.counter('myapp.requests', {
+	    'host': mod_os.hostname(),
+	    'method': 'GET'
+	}, 1);
+	
+	/*
+	 * Ditto, but with a gauge.
+	 */
+	blaster.gauge('myapp.concurrent_requests', {
+	    'host': mod_os.hostname()
+	}, 1);
+}, 1000);
 ```
 
 ## Background
@@ -114,7 +129,8 @@ tracking the hostname, request type, and response code:
 
 which would allow you to plot graphs of total requests, requests by hostname,
 requests by status code, requests by method, and so on.  Not surprisingly, this
-gets more unwieldy the more metadata fields you have.
+gets more unwieldy the more metadata fields you have, and it doesn't work well
+if metadata fields would include dots (e.g., hostnames).
 
 
 ## Statblast
@@ -154,8 +170,8 @@ example, in the configuration:
 ```javascript
 'statsd_stats': {
     'myapp.requests': [
-        '%_name.%host',
-        '%_name.%method'
+        '%_name.byhost.%host',
+        '%_name.bymethod.%method'
     ]
 }
 ```
@@ -179,8 +195,8 @@ strings (identified with '%').  The expansion '%%' expands to a literal '%', and
 the expansion '%\_name' expands to the basename.
 
 If you blast a stat that's not defined in the configuration, statblast just
-ignores it.  You can reconfigure your app to determine what you want to be
-sending and not, but the app code can always just call into statblast.
+ignores it.  The idea is that your app can record whatever it wants and you can
+reconfigure statblast to filter out only the events you want to send.
 
 
 ## Error handling
