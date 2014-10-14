@@ -344,3 +344,76 @@ run the demo above, and then in a separate terminal, run:
 The script runs until you kill it.  Each time a counter or gauge is updated, it
 prints the pid that updated it, the type of stat (counter or gauge), the value,
 and the basename and metadata (see above).
+
+
+## Sending data from the command line
+
+There are lots of programs that emit periodic numeric output, and for
+prototyping it's often useful to transmit data directly from these programs.
+For example, on systems with DTrace support, this command prints the number of
+system calls per second across the whole system:
+
+    $ dtrace -q -n 'syscall:::{ @ = count(); }' \
+        -n 'tick-1s{ printa(@); clear(@); }'
+
+            12290
+
+            10027
+
+            11926
+
+            11157
+
+This package provides statblast(1), a command-line tool for transmitting data.
+You could ingest this system call data directly into statsd using:
+
+    $ dtrace -q -n 'syscall:::{ @ = count(); }' \
+        -n 'tick-1s{ printa(@); trunc(@); }' | \
+        statblast --global-metadata="host=$(hostname)" \
+            --statsd-host=... \
+	    --statsd-stats=myapp.syscalls.%host \
+	    myapp.syscalls
+
+statblast reads the piped data and treats each blank line like a call to
+the Node.js `.blast` function above.  The default type is "counter" (use
+--type=gauge for a gauge).  "myapp.syscalls" is the basename.  The other flags
+correspond to the configuration options for creating a blaster.  Global metadata
+are a list of key-value pairs that should be supplied for all data points.
+
+You can also ingest data that has metadata for each point.  For example, this
+similar script emits data points not just for each second, but also for each
+syscall:
+
+    $ dtrace -q -n 'syscall:::{ @[probefunc] = count(); }' \
+          -n 'tick-1s{ printa(@); trunc(@); }'
+
+      ...
+      workq_kernreturn                                                 75
+      __semwait_signal                                                 79
+      sendmsg                                                          98
+      write                                                           124
+      read                                                            174
+      recvmsg                                                         192
+      psynch_cvwait                                                   374
+      kevent                                                          570
+      ioctl                                                          8315
+
+Here's a one-liner that transmits this data and includes the system call name
+(e.g., "ioctl") as stat metadata (that, with the statsd target, gets
+incorporated into the stat name):
+
+    $ dtrace -q -n 'syscall:::{ @[probefunc] = count(); }' \
+          -n 'tick-1s{ printa(@); trunc(@); }' \
+        statblast --global-metadata="host=$(hostname)" \
+            --statsd-host=... \
+	    --statsd-stats=myapp.syscalls.%host \
+	    --statsd-stats=myapp.syscalls.%syscall \
+	    --format=syscall,value \
+	    myapp.syscalls
+
+Here's a duct-tape one-liner for OS X that transmits IOPS for this host:
+
+    $ iostat 1 | statblast --format=-,value
+        --global-metadata=host=$(hostname) \
+	--statsd-stat=myapp.iops.%host \
+	myapp.iops

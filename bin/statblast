@@ -1,0 +1,274 @@
+#!/usr/bin/env node
+/* vim: set ft=javascript: */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Copyright (c) 2014, Joyent, Inc.
+ */
+
+/*
+ * statblast: command-line tool for sending data.  See README.md for usage.
+ */
+
+var mod_assertplus = require('assert-plus');
+var mod_getopt = require('posix-getopt');
+var mod_jsprim = require('jsprim');
+var mod_lstream = require('lstream');
+var mod_statblast = require('../lib/statblast');
+
+var VError = require('verror');
+var strsplit = require('strsplit');
+
+var sbUsage = [
+    'usage: statblast OPTIONS BASENAME',
+    '',
+    '    Reads data points as lines on stdin and emits stats to statblast ',
+    '    targets (e.g., statsd).  You\'ll want to specify at least one ',
+    '    --statsd-stat option.',
+    '',
+    'Options:',
+    '',
+    '    --format=FIELD1[,FIELD2...]',
+    '',
+    '       Indicates that each line of stdin has values for metadata FIELD1, ',
+    '       FIELD2, and so on, in that order.  The special field "value" ',
+    '       means the actual numeric value for the  stat, and it can appear ',
+    '       anywhere.  The special field "_" is ignored.' +
+	'(default: "value", i.e., no metadata fields present)',
+    '',
+    '    --global-metadata=KEY1=VALUE1[,KEY2=value2...]',
+    '',
+    '       Set metadata KEY1 to VALUE1 for all data points emitted.  Useful ',
+    '       for setting global metadata like host=$(hostname).',
+    '',
+    '    --statsd-mode tcp|udp',
+    '',
+    '        Send data to statsd using TCP or UDP (default: "udp")',
+    '',
+    '    --statsd-host HOST',
+    '',
+    '        DNS hostname or IP address of statsd receiver ' +
+	'(default: 127.0.0.1)',
+    '',
+    '    --statsd-port PORT',
+    '',
+    '        TCP or UDP port of statsd receiver (default: 8125)',
+    '',
+    '    --statsd-stat PATTERN',
+    '',
+    '        For each data point read on stdin, emit a statsd stat named',
+    '        PATTERN, where metadata fields are expanded using "%".  For ',
+    '        example, in pattern "myapp.nrequests.%host", "%host" will be ',
+    '        expanded with metadata field "host".  See --global-metadata ',
+    '        and --format.  You can specify --statsd-stat multiple times ',
+    '        to emit multiple statsd stats for each data point on stdin.',
+    '        See README.md for details.',
+    '',
+    '    --type counter|gauge',
+    '',
+    '        The stat has statsd type "counter" or "gauge" ' +
+	'(default: "counter")',
+    ''
+].join('\n');
+
+/* Program configuration and state */
+var sbCmd = {
+    'sb_blaster_config': {
+	'backend': 'statsd',
+	'statsd_mode': 'udp',		/* --statsd-mode */
+	'statsd_host': '127.0.0.1',	/* --statsd-host */
+	'statsd_port': 8125,		/* --statsd-port */
+	'statsd_stats': {}		/* --statsd-stat */
+    },
+    'sb_format': null,		/* --format */
+    'sb_metadata': {},		/* --global-metadata */
+    'sb_type': 'counter',	/* --type */
+    'sb_basename': null,	/* non-option command argument */
+    'sb_blaster': null		/* blaster object */
+};
+
+function main()
+{
+	var blaster, lstream;
+
+	sbParseOptions(sbCmd, process.argv);
+
+	blaster = mod_statblast.createBlaster(sbCmd.sb_blaster_config);
+	blaster.on('warn', function (err) {
+		console.error('statblaster: %s', err.message);
+	});
+	sbCmd.sb_blaster = blaster;
+
+	lstream = new mod_lstream();
+	process.stdin.pipe(lstream);
+	lstream.on('data', sbReadPoint.bind(null, sbCmd));
+}
+
+function usage(err)
+{
+	if (err)
+		console.error('statblast: %s', err.message);
+	console.error(sbUsage);
+	process.exit(2);
+}
+
+function sbParseOptions(sb, argv)
+{
+	var options, parser, option, arg, patterns;
+
+	options = [
+	    'f:(format)',
+	    'g:(global-metadata)',
+	    't:(type)',
+
+	    'm:(statsd-mode)',
+	    'h:(statsd-host)',
+	    'p:(statsd-port)',
+	    's:(statsd-stat)'
+	];
+	parser = new mod_getopt.BasicParser(options.join(''), argv);
+	patterns = [];
+
+	while ((option = parser.getopt()) !== undefined) {
+		arg = option.optarg;
+		switch (option.option) {
+		case 'f':
+			if (sb.sb_format === null)
+				sb.sb_format = [];
+			/* JSSTYLED */
+			arg.split(/,/).forEach(function (field) {
+				sb.sb_format.push(field);
+			});
+			break;
+
+		case 'g':
+			/* JSSTYLED */
+			arg.split(/,/).forEach(function (kvpair) {
+				var parts = strsplit(kvpair, '=', 2);
+				if (parts.length < 2)
+					usage(new VError('--global-metadata: ' +
+					    'bad key-value pair: "%s"',
+					    kvpair));
+				sb.sb_metadata[parts[0]] = parts[1];
+			});
+			break;
+
+		case 't':
+			arg = arg.toLowerCase();
+			if (arg != 'counter' && arg != 'gauge')
+				usage(new VError('--type: bad value: "%s"',
+				    option.optarg));
+			sb.sb_type = arg;
+			break;
+
+		case 'm':
+			arg = arg.toLowerCase();
+			if (arg != 'tcp' && arg != 'udp')
+				usage(new VError('--statsd-mode: bad value: ' +
+				    '"%s"', option.optarg));
+
+			sb.sb_blaster_config.statsd_mode = arg;
+			break;
+
+		case 'h':
+			sb.sb_blaster_config.statsd_host = arg;
+			break;
+
+		case 'p':
+			arg = parseInt(arg, 10);
+			if (isNaN(arg))
+				usage(new VError(
+				    '--statsd-port: not a number: "%s"',
+				    option.optarg));
+			if (arg <= 0 || arg > 65535)
+				usage(new VError(
+				    '--statsd-port: invalid tcp port'));
+			sb.sb_blaster_config.statsd_port = arg;
+			break;
+
+		case 's':
+			/* JSSTYLED */
+			arg.split(/,/).forEach(function (pattern) {
+				patterns.push(pattern);
+			});
+			break;
+
+		default:
+			/* error message already emitted by getopt */
+			mod_assertplus.equal('?', option.option);
+			usage();
+			break;
+		}
+	}
+
+	if (parser.optind() >= argv.length)
+		usage(new VError('missing required argument: "basename"'));
+
+	if (parser.optind() < argv.length - 1)
+		usage(new VError('extra arguments'));
+
+	sb.sb_basename = argv[parser.optind()];
+
+	if (sb.sb_format === null)
+		sb.sb_format = [ 'value' ];
+
+	/*
+	 * If the user configured no stats to be sent, let them know.  It's not
+	 * a fatal error because it's useful to be able to reconfigure this
+	 * command-line as desired and have it do the right thing (which might
+	 * be nothing), rather than having to modify the surrounding code to not
+	 * call statblast in the first place for this case.
+	 */
+	if (patterns.length === 0)
+		console.error('warn: no stats configured (see --statsd-stats)');
+	else
+		sb.sb_blaster_config.statsd_stats[sb.sb_basename] = patterns;
+}
+
+function sbReadPoint(sb, rawline)
+{
+	var line, metadata, parts, value;
+
+	line = rawline.trim();
+	if (line.length === 0)
+		return;
+
+	metadata = mod_jsprim.deepCopy(sb.sb_metadata);
+	parts = strsplit(line, /\s+/, sb.sb_format.length);
+	console.error(rawline);
+	console.error(parts);
+	console.error(sb.sb_format);
+	sb.sb_format.forEach(function (field, i) {
+		if (i >= parts.length)
+			return;
+
+		if (field == 'value') {
+			value = parseInt(parts[i], 10);
+			return;
+		}
+
+		if (field == '-')
+			return;
+
+		metadata[field] = parts[i];
+	});
+
+	if (value === undefined) {
+		console.error('line garbled (no value found): "%s"', rawline);
+		return;
+	}
+
+	if (isNaN(value)) {
+		console.error('line garbled (invalid value): "%s"', rawline);
+		return;
+	}
+
+	sb.sb_blaster.blast(sb.sb_type, sb.sb_basename, metadata, value);
+}
+
+main();

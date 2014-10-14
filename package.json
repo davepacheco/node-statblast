@@ -15,6 +15,9 @@
 		"dtrace-provider": "0.2.8",
 		"extsprintf": "1.2.0",
 		"jsprim": "0.6.1",
+		"lstream": "0.0.4",
+		"posix-getopt": "1.1.0",
+		"strsplit": "1.0.0",
 		"verror": "1.4.0"
 	}
 }
